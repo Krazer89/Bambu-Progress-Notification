@@ -47,12 +47,24 @@ except ImportError:
     print("  cp config.example.py config.py")
     sys.exit(1)
 
-# MQTT settings (required)
+# Connection mode selection
+BAMBU_USE_LAN_MODE = getattr(_config_module, 'BAMBU_USE_LAN_MODE', False)
+
+# MQTT settings (connection parameters vary by mode)
 BAMBU_MQTT_SERVER = getattr(_config_module, 'BAMBU_MQTT_SERVER', 'us.mqtt.bambulab.com')
 BAMBU_MQTT_PORT = getattr(_config_module, 'BAMBU_MQTT_PORT', 8883)
+BAMBU_PRINTER_SERIAL = getattr(_config_module, 'BAMBU_PRINTER_SERIAL', '')
+
+# Cloud mode settings
 BAMBU_USER_ID = getattr(_config_module, 'BAMBU_USER_ID', '')
 BAMBU_ACCESS_TOKEN = getattr(_config_module, 'BAMBU_ACCESS_TOKEN', '')
-BAMBU_PRINTER_SERIAL = getattr(_config_module, 'BAMBU_PRINTER_SERIAL', '')
+
+# LAN mode settings
+BAMBU_PRINTER_IP = getattr(_config_module, 'BAMBU_PRINTER_IP', '')
+BAMBU_LAN_ACCESS_CODE = getattr(_config_module, 'BAMBU_LAN_ACCESS_CODE', '')
+
+# TLS configuration
+BAMBU_TLS_SKIP_VERIFY = getattr(_config_module, 'BAMBU_TLS_SKIP_VERIFY', True)
 
 # Firebase/FCM settings
 FIREBASE_CREDENTIALS_FILE = getattr(_config_module, 'FIREBASE_CREDENTIALS_FILE', 'firebase-service-account.json')
@@ -846,16 +858,53 @@ class BambuFCMBridge:
 # =============================================================================
 
 if __name__ == "__main__":
-    # Validate required config
-    if not BAMBU_USER_ID or not BAMBU_ACCESS_TOKEN or not BAMBU_PRINTER_SERIAL:
-        logger.error("Missing required config: BAMBU_USER_ID, BAMBU_ACCESS_TOKEN, BAMBU_PRINTER_SERIAL")
+    # Validate required config based on connection mode
+    if BAMBU_USE_LAN_MODE:
+        # LAN mode validation
+        if not BAMBU_PRINTER_IP or not BAMBU_LAN_ACCESS_CODE:
+            logger.error("LAN mode enabled but missing required config:")
+            logger.error("  BAMBU_PRINTER_IP: {}".format("✓" if BAMBU_PRINTER_IP else "MISSING"))
+            logger.error("  BAMBU_LAN_ACCESS_CODE: {}".format("✓" if BAMBU_LAN_ACCESS_CODE else "MISSING"))
+            sys.exit(1)
+        logger.info("=" * 50)
+        logger.info("Bambu FCM Bridge - LAN Mode (Developer)")
+        logger.info("=" * 50)
+        logger.info(f"Printer IP: {BAMBU_PRINTER_IP}")
+    else:
+        # Cloud mode validation
+        if not BAMBU_USER_ID or not BAMBU_ACCESS_TOKEN:
+            logger.error("Cloud mode enabled but missing required config:")
+            logger.error("  BAMBU_USER_ID: {}".format("✓" if BAMBU_USER_ID else "MISSING"))
+            logger.error("  BAMBU_ACCESS_TOKEN: {}".format("✓" if BAMBU_ACCESS_TOKEN else "MISSING"))
+            sys.exit(1)
+        logger.info("=" * 50)
+        logger.info("Bambu FCM Bridge - Cloud Mode")
+        logger.info("=" * 50)
+
+    if not BAMBU_PRINTER_SERIAL:
+        logger.error("Missing required config: BAMBU_PRINTER_SERIAL")
         sys.exit(1)
 
-    # Create shared MQTT client
-    mqtt = BambuMQTTClient(
-        BAMBU_MQTT_SERVER, BAMBU_MQTT_PORT,
-        BAMBU_USER_ID, BAMBU_ACCESS_TOKEN, BAMBU_PRINTER_SERIAL
-    )
+    # Create shared MQTT client with appropriate parameters
+    if BAMBU_USE_LAN_MODE:
+        # LAN mode: use printer IP and access code
+        mqtt = BambuMQTTClient(
+            mqtt_server=BAMBU_PRINTER_IP,
+            mqtt_port=BAMBU_MQTT_PORT,
+            printer_serial=BAMBU_PRINTER_SERIAL,
+            lan_access_code=BAMBU_LAN_ACCESS_CODE,
+            tls_skip_verify=BAMBU_TLS_SKIP_VERIFY
+        )
+    else:
+        # Cloud mode: use cloud server, user ID, and access token
+        mqtt = BambuMQTTClient(
+            mqtt_server=BAMBU_MQTT_SERVER,
+            mqtt_port=BAMBU_MQTT_PORT,
+            printer_serial=BAMBU_PRINTER_SERIAL,
+            user_id=BAMBU_USER_ID,
+            access_token=BAMBU_ACCESS_TOKEN,
+            tls_skip_verify=BAMBU_TLS_SKIP_VERIFY
+        )
 
     # Create notification service
     bridge = BambuFCMBridge(mqtt)
@@ -887,8 +936,6 @@ if __name__ == "__main__":
     if "--test" in sys.argv:
         bridge.run_test_mode()
     else:
-        logger.info("=" * 50)
-        logger.info("Bambu FCM Bridge Starting")
         logger.info(f"Printer: {BAMBU_PRINTER_SERIAL}")
         logger.info("Real-time mode: sending updates immediately")
         logger.info("=" * 50)

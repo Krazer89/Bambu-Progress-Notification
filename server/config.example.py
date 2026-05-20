@@ -9,7 +9,14 @@
 # needs and ignore settings for the other.
 
 # =============================================================================
-# Bambu Cloud MQTT Configuration (required)
+# Bambu MQTT Connection Mode - Cloud or LAN
+# =============================================================================
+# Set to True to connect to printer directly on LAN (developer/local mode)
+# Set to False to connect to Bambu Cloud (default)
+BAMBU_USE_LAN_MODE = False
+
+# =============================================================================
+# Bambu Cloud MQTT Configuration (required if BAMBU_USE_LAN_MODE = False)
 # =============================================================================
 # Server: "us.mqtt.bambulab.com" for most users, "cn.mqtt.bambulab.com" for China
 BAMBU_MQTT_SERVER = "us.mqtt.bambulab.com"
@@ -25,6 +32,21 @@ BAMBU_ACCESS_TOKEN = "YOUR_ACCESS_TOKEN_HERE"
 # Your printer's serial number
 # How to find: Bambu Handy app -> Printer settings, or printed on the printer
 BAMBU_PRINTER_SERIAL = "YOUR_PRINTER_SERIAL_HERE"
+
+# =============================================================================
+# Bambu LAN MQTT Configuration (required if BAMBU_USE_LAN_MODE = True)
+# =============================================================================
+# Printer's local IP address on your network
+BAMBU_PRINTER_IP = "YOUR_PRINTER_IP_HERE"  # e.g., "192.168.1.100"
+
+# LAN access code (aka dev_access_code from Device object)
+# How to find: Check your printer's local network settings or API documentation
+BAMBU_LAN_ACCESS_CODE = "YOUR_LAN_ACCESS_CODE_HERE"
+
+# Skip TLS certificate verification (for self-signed certificates)
+# Set to True for LAN mode (printer uses self-signed cert)
+# Set to False for Cloud mode (uses valid Bambu certificate)
+BAMBU_TLS_SKIP_VERIFY = False  # Default: skip verification for LAN safety
 
 # =============================================================================
 # Filament Tracker Settings

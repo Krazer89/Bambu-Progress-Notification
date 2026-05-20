@@ -152,13 +152,23 @@ class PrinterState:
 class BambuMQTTClient:
     """Modular MQTT client for Bambu Lab printers.
 
-    Connects to Bambu Cloud MQTT, parses printer state, and fires callbacks
-    when print data or AMS data arrives. Consumers register callbacks to
-    react to data without managing the MQTT connection themselves.
+    Connects to Bambu Cloud MQTT or to a printer on LAN in developer mode.
+    Parses printer state and fires callbacks when print data or AMS data arrives.
+    Consumers register callbacks to react to data without managing the MQTT connection themselves.
+
+    Args:
+        mqtt_server: MQTT server hostname/IP (cloud or LAN)
+        mqtt_port: MQTT server port (usually 8883)
+        printer_serial: Printer's serial number
+        user_id: Bambu Lab account user ID (cloud mode)
+        access_token: Bambu Lab access token (cloud mode)
+        lan_access_code: LAN access code (developer mode on LAN)
+        tls_skip_verify: Skip TLS certificate verification (for self-signed certs)
     """
 
-    def __init__(self, mqtt_server: str, mqtt_port: int, user_id: str,
-                 access_token: str, printer_serial: str):
+    def __init__(self, mqtt_server: str, mqtt_port: int, printer_serial: str,
+                 user_id: str = "", access_token: str = "", lan_access_code: str = "",
+                 tls_skip_verify: bool = True):
         self.state = PrinterState()
         self.mqtt_client: Optional[mqtt.Client] = None
         self.printer_serial = printer_serial
@@ -166,6 +176,9 @@ class BambuMQTTClient:
         self._mqtt_port = mqtt_port
         self._user_id = user_id
         self._access_token = access_token
+        self._lan_access_code = lan_access_code
+        self._tls_skip_verify = tls_skip_verify
+        self._is_lan_mode = bool(lan_access_code)
 
         # Callback lists
         self._on_print_update_cbs: List[Callable] = []
@@ -377,19 +390,50 @@ class BambuMQTTClient:
     # -- Connection --
 
     def run(self):
-        """Connect to Bambu MQTT and run the event loop (blocks)."""
+        """Connect to Bambu MQTT and run the event loop (blocks).
+        
+        Supports both cloud and LAN (developer) modes based on initialization parameters.
+        """
         client_id = f"bambu_mqtt_{int(time.time())}"
         self.mqtt_client = mqtt.Client(
             client_id=client_id,
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2
         )
 
-        username = f"u_{self._user_id}"
-        self.mqtt_client.username_pw_set(username, self._access_token)
+        # Set up credentials based on connection mode
+        if self._is_lan_mode:
+            # LAN mode (developer mode)
+            username = "bblp"
+            password = self._lan_access_code
+            mode_str = "LAN (developer)"
+        else:
+            # Cloud mode
+            username = f"u_{self._user_id}"
+            password = self._access_token
+            mode_str = "Cloud"
+
+        self.mqtt_client.username_pw_set(username, password)
+        logger.info(f"Connection mode: {mode_str}")
         logger.info(f"Username: {username}")
         logger.info(f"Client ID: {client_id}")
 
-        self.mqtt_client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
+        # Configure TLS based on verification setting
+        if self._tls_skip_verify:
+            # Skip certificate verification (for self-signed certificates)
+            self.mqtt_client.tls_set(
+                ca_certs=None,
+                certfile=None,
+                keyfile=None,
+                cert_reqs=ssl.CERT_NONE,
+                tls_version=ssl.PROTOCOL_TLSv1_2,
+                ciphers=None
+            )
+            self.mqtt_client.tls_insecure_set(True)
+            logger.info("TLS certificate verification: DISABLED")
+        else:
+            # Verify TLS certificate
+            self.mqtt_client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
+            logger.info("TLS certificate verification: ENABLED")
 
         self.mqtt_client.on_connect = self._handle_connect
         self.mqtt_client.on_disconnect = self._handle_disconnect
